@@ -6,9 +6,6 @@ import json
 import requests
 import time
 
-#gpt-5.6-luna
-#gemini-3.6-flash
-
 GAME_CHANNEL = "chess-battle"
 SYSTEM_PROMPT = """You are a grand chess master.
 Play the game by submiting fuction calls for the next move.
@@ -19,181 +16,122 @@ the FEN is the authoritative current position.
 """
 
 ## Legal moves are supplied as a tool enum so only valid moves are callable
-def tools(board: chess.Board) -> list:
-    return [{
-        "type": "function",
-        "name": "chess_move",
-        "description": "Move piece on chess board.",
-        "strict": True,
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "reasoning": {
-                    "type": "string",
-                    "description": "The strategy and reasoning for the movement.",
-                },
-                "move": {
-                    "type": "string",
-                    "description": "The legal move in UCI notation. Example: 'e2e4'",
-                    "enum": [m.uci() for m in board.legal_moves],
-                },
+def params(board: chess.Board) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "reasoning": {
+                "type": "string",
+                "description": "The strategy and reasoning for the movement.",
             },
-            "required": ["reasoning", "move"],
-            "additionalProperties": False
+            "move": {
+                "type": "string",
+                "description": "The legal move in UCI notation. Example: 'e2e4'",
+                "enum": [m.uci() for m in board.legal_moves],
+            },
         },
-    }]
+        "required": ["reasoning", "move"],
+    }
+
+def prompt(board: chess.Board) -> str:
+    color = "white" if board.turn == chess.WHITE else "black"
+    return f"FEN: {board.fen()}\nYou are playing: {color}"
+
+def report(board, elapsed, tokens_in, tokens_out, reasoning):
+    print(
+        f"move {board.fullmove_number}: {elapsed:.1f}s "
+        f"in={tokens_in} out={tokens_out} reasoning={reasoning or 0}"
+    )
 
 ## Transmit Player Movements
 def publish(channel, message):
-    origin = 'https://h2.pubnubapi.com'
-    pubkey = 'demo'
-    subkey = 'demo'
     payload = json.dumps(message)
-    uri = f'{origin}/publish/{pubkey}/{subkey}/0/{channel}/0/{payload}'
-    response = requests.get(uri)
-    return response.json()
+    uri = f'https://h2.pubnubapi.com/publish/demo/demo/0/{channel}/0/{payload}'
+    return requests.get(uri).json()
 
-class Player():
-    def move(self, board: chess.Board) -> str:
-        pass
+class ChatGPT():
+    model = "gpt-5.6-luna"
 
-class ChatGPT(Player):
     def __init__(self):
         self.player = OpenAI()
 
-    def chat(self, board: chess.Board):
-        color = "white" if board.turn == chess.WHITE else "black"
-        return [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": (
-                f"FEN: {board.fen()}\n"
-                f"You are playing: {color}"
-            )},
-        ]
-
-    def move(self, board: chess.Board) -> str:
-        start_time = time.time()
+    def move(self, board: chess.Board) -> dict:
+        start = time.time()
         response = self.player.responses.create(
-            model="gpt-5.6-luna",
+            model=self.model,
             tool_choice={"type": "function", "name": "chess_move"},
-            tools=tools(board),
-            input=self.chat(board),
+            tools=[{
+                "type": "function",
+                "name": "chess_move",
+                "description": "Move piece on chess board.",
+                "strict": True,
+                "parameters": {**params(board), "additionalProperties": False},
+            }],
+            input=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt(board)},
+            ],
         )
-        elapsed = time.time() - start_time
-
         usage = response.usage
-        reasoning = usage.output_tokens_details.reasoning_tokens
-        print(
-            f"move {board.fullmove_number}: {elapsed:.1f}s "
-            f"in={usage.input_tokens} "
-            f"out={usage.output_tokens} "
-            f"reasoning={reasoning}"
-        )
+        report(board, time.time() - start, usage.input_tokens,
+               usage.output_tokens, usage.output_tokens_details.reasoning_tokens)
 
         for item in response.output:
             if item.type == "function_call":
-                output = json.loads(item.arguments)
-                return output
+                return json.loads(item.arguments)
 
-class Gemini(Player):
+class Gemini():
+    model = "gemini-3.6-flash"
+
     def __init__(self):
         self.player = genai.Client()
 
-    ## Legal moves are supplied as a tool enum so only valid moves are callable
-    def config(self, board: chess.Board) -> types.GenerateContentConfig:
-        chess_move = types.FunctionDeclaration(
-            name="chess_move",
-            description="Move piece on chess board.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "reasoning": {
-                        "type": "string",
-                        "description": "The strategy and reasoning for the movement.",
-                    },
-                    "move": {
-                        "type": "string",
-                        "description": "The legal move in UCI notation. Example: 'e2e4'",
-                        "enum": [m.uci() for m in board.legal_moves],
-                    },
-                },
-                "required": ["reasoning", "move"],
-            },
-        )
-
-        return types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            tools=[types.Tool(function_declarations=[chess_move])],
-            tool_config=types.ToolConfig(
-                function_calling_config=types.FunctionCallingConfig(
-                    mode="ANY",
-                    allowed_function_names=["chess_move"],
+    def move(self, board: chess.Board) -> dict:
+        start = time.time()
+        response = self.player.models.generate_content(
+            model=self.model,
+            contents=prompt(board),
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                tools=[types.Tool(function_declarations=[types.FunctionDeclaration(
+                    name="chess_move",
+                    description="Move piece on chess board.",
+                    parameters=params(board),
+                )])],
+                tool_config=types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(
+                        mode="ANY",
+                        allowed_function_names=["chess_move"],
+                    ),
                 ),
             ),
         )
-
-    def contents(self, board: chess.Board) -> list:
-        color = "white" if board.turn == chess.WHITE else "black"
-        return [
-            types.Content(role="user", parts=[types.Part(text=(
-                f"FEN: {board.fen()}\n"
-                f"You are playing: {color}"
-            ))]),
-        ]
-
-    def move(self, board: chess.Board) -> str:
-        start_time = time.time()
-        response = self.player.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=self.contents(board),
-            config=self.config(board),
-        )
-        elapsed = time.time() - start_time
-
         usage = response.usage_metadata
-        reasoning = usage.thoughts_token_count or 0
-        print(
-            f"move {board.fullmove_number}: {elapsed:.1f}s "
-            f"in={usage.prompt_token_count} "
-            f"out={usage.candidates_token_count} "
-            f"reasoning={reasoning}"
-        )
+        report(board, time.time() - start, usage.prompt_token_count,
+               usage.candidates_token_count, usage.thoughts_token_count)
 
         for call in response.function_calls or []:
             return dict(call.args)
 
 class Game():
     def __init__(self):
-        self.player1_chatgpt = ChatGPT()
-        self.player2_gemini = Gemini()
+        self.players = {chess.WHITE: ChatGPT(), chess.BLACK: Gemini()}
         self.board = chess.Board()
-
-    def transmit(self, move):
-        return publish(GAME_CHANNEL, move)
 
     def over(self):
         return self.board.is_game_over()
 
     def move(self):
-        if self.board.turn == chess.WHITE:
-            player = self.player1_chatgpt
-        else:
-            player = self.player2_gemini
+        uci = self.players[self.board.turn].move(self.board)['move']
+        move = chess.Move.from_uci(uci)
+        if move not in self.board.legal_moves:
+            raise ValueError(f"illegal move {uci} in {self.board.fen()}")
 
-        output = player.move(self.board)
-        uci = output['move']
-        move = f"{uci[:2]}-{uci[2:]}"
-
-        candidate = chess.Move.from_uci(uci)
-        if candidate not in self.board.legal_moves:
-            raise ValueError(f"illegal move {move} in {self.board.fen()}")
-
-        self.board.push(candidate)
-        return move
+        self.board.push(move)
+        return f"{uci[:2]}-{uci[2:]}"
 
 game = Game()
 while not game.over():
-    move = game.move()
-    game.transmit(move)
+    publish(GAME_CHANNEL, game.move())
 
 print(f"Game over: {game.board.result()} ({game.board.outcome().termination.name})")
