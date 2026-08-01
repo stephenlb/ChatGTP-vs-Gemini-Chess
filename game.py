@@ -37,10 +37,10 @@ def prompt(board: chess.Board) -> str:
     color = "white" if board.turn == chess.WHITE else "black"
     return f"FEN: {board.fen()}\nYou are playing: {color}"
 
-def report(board, elapsed, tokens_in, tokens_out, reasoning):
+def report(name, board, elapsed, tokens_in, tokens_out, reasoning):
+    color = "white" if board.turn == chess.WHITE else "black"
     print(
-        f"move {board.fullmove_number}: {elapsed:.1f}s "
-        f"in={tokens_in} out={tokens_out} reasoning={reasoning or 0}"
+        f"move {board.fullmove_number}: {name} ({color}) {elapsed:.1f}s "
     )
 
 ## Transmit Player Movements
@@ -50,6 +50,7 @@ def publish(channel, message):
     return requests.get(uri).json()
 
 class ChatGPT():
+    name = "ChatGPT"
     model = "gpt-5.6-luna"
 
     def __init__(self):
@@ -73,7 +74,7 @@ class ChatGPT():
             ],
         )
         usage = response.usage
-        report(board, time.time() - start, usage.input_tokens,
+        report(self.name, board, time.time() - start, usage.input_tokens,
                usage.output_tokens, usage.output_tokens_details.reasoning_tokens)
 
         for item in response.output:
@@ -81,6 +82,7 @@ class ChatGPT():
                 return json.loads(item.arguments)
 
 class Gemini():
+    name = "Gemini"
     model = "gemini-3.6-flash"
 
     def __init__(self):
@@ -107,7 +109,7 @@ class Gemini():
             ),
         )
         usage = response.usage_metadata
-        report(board, time.time() - start, usage.prompt_token_count,
+        report(self.name, board, time.time() - start, usage.prompt_token_count,
                usage.candidates_token_count, usage.thoughts_token_count)
 
         for call in response.function_calls or []:
@@ -120,6 +122,12 @@ class Game():
 
     def over(self):
         return self.board.is_game_over()
+
+    def winner(self):
+        winner = self.board.outcome().winner
+        if winner is None:
+            return "Draw"
+        return f"{self.players[winner].name} wins"
 
     def move(self):
         uci = self.players[self.board.turn].move(self.board)['move']
@@ -135,3 +143,4 @@ while not game.over():
     publish(GAME_CHANNEL, game.move())
 
 print(f"Game over: {game.board.result()} ({game.board.outcome().termination.name})")
+print(game.winner())
