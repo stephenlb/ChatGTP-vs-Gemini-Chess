@@ -2,14 +2,14 @@
 from openai import OpenAI
 import json
 
-chatgpt = OpenAI()
+#gpt-5.6-terra
+#gemini-3.6-flash
+
 SYSTEM_PROMPT = """You are a grand chess master.
 Play the game by submiting fuction calls for the next move.
 You will have the entire state of the board and the previous positions played.
 """
-
-# 1. Define a list of callable tools for the model
-tools = [
+TOOLS = [
     {
         "type": "function",
         "name": "chess_move",
@@ -37,37 +37,83 @@ tools = [
     },
 ]
 
-# Create a running input list we will add to over time
-input_list = [
-    {"role": "system", "content": SYSTEM_PROMPT}, 
-    {"role": "user", "content": "Game State: "},
-]
+class Player():
+    def move(self, history: list) -> str:
+        pass
 
-def game_state(state):
-    input_list.append({
-        "role": "user",
-        "content": f"Game State: {state}",
-    })
+class ChatGPT(Player):
+    def __init__(self):
+        self.player = OpenAI()
 
-# 2. Prompt the model with tools defined
-response = chatgpt.responses.create(
-    model="gpt-5.6",
-    tool_choice={"type": "function", "name": "chess_move"},
-    tools=tools,
-    input=input_list,
-)
+    def chat(self, game_state=['start']):
+        history = "\n".join(game_state)
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT}, 
+            {"role": "user", "content": f"Game History: {history} "},
+        ]
 
-# Save function call outputs for subsequent requests
-input_list += response.output
+    def move(self, history: list) -> str:
+        response = self.player.responses.create(
+            model="gpt-5.6",
+            tool_choice={"type": "function", "name": "chess_move"},
+            tools=TOOLS,
+            input=self.chat(history),
+        )
 
-for item in response.output:
-    if item.type == "function_call":
-        output = json.loads(item.arguments)
-        input_list.append({
-            "type": "function_call_output",
-            "call_id": item.call_id,
-            "output": output,
-        })
+        for item in response.output:
+            if item.type == "function_call":
+                output = json.loads(item.arguments)
+                return output
 
-print("Final input:")
-print(input_list)
+"""
+class Gemini(Player):
+    def __init__(self):
+        pass
+    def move(self, history: list) -> str:
+        pass
+    
+    def __init__(self):
+        self.player1_chatgpt = OpenAI()
+        self.player2_gemini = None
+        self.history = []
+
+    def tranmit_move(self, move):
+        pass
+
+    def next_move(self):
+        if len(self.history) % 2 == 0:
+            player = self.player1_chatgpt
+        else:
+            ## TODO
+            player = self.player1_chatgpt
+            #player = self.player2_gemini
+"""
+
+class Game():
+    def __init__(self):
+        self.player1_chatgpt = ChatGPT()
+        self.player2_gemini = None
+        self.history = []
+
+    def transmit(self, move):
+        pass
+
+    def move(self):
+        if len(self.history) % 2 == 0:
+            player = self.player1_chatgpt
+        else:
+            ## TODO
+            player = self.player1_chatgpt
+            #player = self.player2_gemini
+
+        ## TODO self.history
+        output = player.move(self.history)
+        move = f"{output['start']}-{output['end']}"
+        self.history.append(move)
+        print(move)
+        print(output)
+
+game = Game()
+while True: ## While Game not over
+    game.move()
+
