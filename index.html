@@ -39,7 +39,18 @@ body, html, div {
 </div>
 <script src="pubnub.js"></script>
 <script>
+    const GAME_CHANNEL = "chess-battle";
+    const pubnub = PubNub({});
     const board = Chessboard2('board', 'start');
-    console.log(board.fen());
-    console.log(board.position());
+    pubnub.subscribe({
+        channel : GAME_CHANNEL,
+        messages : update_board,
+        timetoken: '0',
+    });
+    function update_board(move) {
+        console.log(move);
+        board.move(move);
+    }
+    //console.log(board.fen());
+    //console.log(board.position());
 </script>

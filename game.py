@@ -1,10 +1,13 @@
 ## TODO GEMINI
 from openai import OpenAI
 import json
+import requests
 
-#gpt-5.6-terra
+#gpt-5.6-sol
 #gemini-3.6-flash
+#pro-3.1-preview
 
+GAME_CHANNEL = "chess-battle"
 SYSTEM_PROMPT = """You are a grand chess master.
 Play the game by submiting fuction calls for the next move.
 You will have the entire state of the board and the previous positions played.
@@ -36,6 +39,16 @@ TOOLS = [
         },
     },
 ]
+
+## Transmit Player Movements
+def publish(channel, message):
+    origin = 'https://h2.pubnubapi.com'
+    pubkey = 'demo'
+    subkey = 'demo'
+    payload = json.dumps(message)
+    uri = f'{origin}/publish/{pubkey}/{subkey}/0/{channel}/0/{payload}'
+    response = requests.get(uri)
+    return response.json()
 
 class Player():
     def move(self, history: list) -> str:
@@ -77,9 +90,6 @@ class Gemini(Player):
         self.player2_gemini = None
         self.history = []
 
-    def tranmit_move(self, move):
-        pass
-
     def next_move(self):
         if len(self.history) % 2 == 0:
             player = self.player1_chatgpt
@@ -96,7 +106,7 @@ class Game():
         self.history = []
 
     def transmit(self, move):
-        pass
+        return publish(GAME_CHANNEL, move)
 
     def move(self):
         if len(self.history) % 2 == 0:
@@ -106,14 +116,15 @@ class Game():
             player = self.player1_chatgpt
             #player = self.player2_gemini
 
-        ## TODO self.history
         output = player.move(self.history)
         move = f"{output['start']}-{output['end']}"
         self.history.append(move)
-        print(move)
-        print(output)
+        #print(move)
+        print(self.history)
+        #print(output)
+        return move
 
 game = Game()
 while True: ## While Game not over
-    game.move()
-
+    move = game.move()
+    game.transmit(move)
