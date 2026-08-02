@@ -49,10 +49,11 @@ body, html, div {
     });
     function update_board(move) {
         console.log(move);
-        if (Math.random() > 0.5)
-            playAudio('vine-boom.mp3');
-        else
-            playAudio('faahh.mp3');
+        playAudio('vine-boom.mp3');
+        //if (Math.random() > 0.5)
+            //playAudio('vine-boom.mp3');
+        //else
+            //playAudio('faahh.mp3');
         board.move(move);
     }
     //console.log(board.fen());
