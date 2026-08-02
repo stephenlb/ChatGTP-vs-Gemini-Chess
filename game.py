@@ -6,6 +6,10 @@ import json
 import requests
 import time
 
+## Score
+## Gemini = 5
+## ChatGPT = 0
+
 GAME_CHANNEL = "chess-battle"
 SYSTEM_PROMPT = """You are a grand chess master.
 Play the game by submiting fuction calls for the next move.

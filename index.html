@@ -49,8 +49,18 @@ body, html, div {
     });
     function update_board(move) {
         console.log(move);
+        if (Math.random() > 0.5)
+            playAudio('vine-boom.mp3');
+        else
+            playAudio('faahh.mp3');
         board.move(move);
     }
     //console.log(board.fen());
     //console.log(board.position());
-</script>
+    function playAudio(audioUrl) {
+        const audio = new Audio(audioUrl);
+        audio.play().catch((error) => {
+            console.error("Playback prevented by browser permissions or file error:", error);
+        });
+    }
+    </script>
